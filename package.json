@@ -1,6 +1,6 @@
 {
   "name": "@abhishekkumar00019/swagger-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Dynamic MCP server that converts Swagger/OpenAPI specs into callable MCP tools",
   "type": "module",
   "main": "dist/index.js",
