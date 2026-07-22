@@ -1,5 +1,6 @@
-# swagger-mcp
+# @abhishekkumar00019/swagger-mcp
 
+[![npm version](https://img.shields.io/npm/v/@abhishekkumar00019/swagger-mcp.svg)](https://www.npmjs.com/package/@abhishekkumar00019/swagger-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue.svg)](https://modelcontextprotocol.io)
 
@@ -23,13 +24,21 @@ Point it at any OpenAPI/Swagger JSON or YAML spec URL, and every API endpoint au
 
 ## 🚀 Quick Start
 
-### Option A: Using `npx` (No Installation Required)
+### Option A: Direct via `npx` (No Installation Required)
 
 ```bash
-SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json npx swagger-mcp
+SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json npx @abhishekkumar00019/swagger-mcp
 ```
 
-### Option B: Local Installation
+### Option B: Global NPM Installation
+
+```bash
+npm install -g @abhishekkumar00019/swagger-mcp
+
+SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json swagger-mcp
+```
+
+### Option C: Local Repository Setup
 
 1. **Clone & Install Dependencies:**
    ```bash
@@ -43,25 +52,16 @@ SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json npx swagger-mcp
    npm run build
    ```
 
-3. **Run the MCP Server:**
+3. **Run locally:**
    ```bash
-   # Via environment variable
    SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json node dist/index.js
-
-   # Via CLI arguments
-   node dist/index.js --spec-url https://petstore.swagger.io/v2/swagger.json
-   ```
-
-4. **Development Mode:**
-   ```bash
-   SWAGGER_MCP_SPEC_URL=https://petstore.swagger.io/v2/swagger.json npm run dev
    ```
 
 ---
 
 ## ⚙️ MCP Client Configurations
 
-Below are sample configurations for popular MCP clients, AI code assistants, and platforms.
+Below are sample configurations for popular MCP clients using `npx @abhishekkumar00019/swagger-mcp`.
 
 ### 1. Claude Desktop
 
@@ -73,8 +73,8 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json",
         "SWAGGER_MCP_BEARER_TOKEN": "your-api-token-here"
@@ -84,17 +84,14 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-> [!TIP]
-> On Windows, replace `/path/to/swagger-mcp/dist/index.js` with your absolute path using double backslashes, e.g. `C:\\Users\\yourname\\swagger-mcp\\dist\\index.js`.
-
 ---
 
 ### 2. Claude Code (CLI)
 
-Add directly via the Claude Code CLI command:
+Add directly via the Claude Code CLI:
 
 ```bash
-claude mcp add swagger-mcp -- node /path/to/swagger-mcp/dist/index.js --spec-url https://petstore.swagger.io/v2/swagger.json
+claude mcp add swagger-mcp -- npx -y @abhishekkumar00019/swagger-mcp --spec-url https://petstore.swagger.io/v2/swagger.json
 ```
 
 Or add to `.mcp.json` in your project root:
@@ -103,8 +100,8 @@ Or add to `.mcp.json` in your project root:
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json"
       }
@@ -123,8 +120,8 @@ Add to `.vscode/mcp.json` in your workspace or global VS Code settings:
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json",
         "SWAGGER_MCP_API_KEY": "your-api-key"
@@ -144,8 +141,8 @@ Add to `.cursor/mcp.json` or configure in **Cursor Settings → Features → MCP
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json"
       }
@@ -164,8 +161,8 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json"
       }
@@ -184,8 +181,8 @@ Add to `cline_mcp_settings.json` (or `roo_code_mcp_settings.json`):
 {
   "mcpServers": {
     "swagger-mcp": {
-      "command": "node",
-      "args": ["/path/to/swagger-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@abhishekkumar00019/swagger-mcp"],
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json"
       }
@@ -205,7 +202,7 @@ ChatGPT Custom GPTs support OpenAPI specifications natively. You can directly im
 If connecting ChatGPT or OpenAI agents to this MCP server via an HTTP/SSE bridge (e.g., using `supergateway` or `mcp-remote`), start `swagger-mcp` with an SSE proxy:
 
 ```bash
-npx supergateway --stdio "node /path/to/swagger-mcp/dist/index.js --spec-url https://petstore.swagger.io/v2/swagger.json" --port 8000
+npx supergateway --stdio "npx -y @abhishekkumar00019/swagger-mcp --spec-url https://petstore.swagger.io/v2/swagger.json" --port 8000
 ```
 
 ---
@@ -219,8 +216,8 @@ Add to `~/.config/zed/settings.json`:
   "context_servers": {
     "swagger-mcp": {
       "command": {
-        "path": "node",
-        "args": ["/path/to/swagger-mcp/dist/index.js"]
+        "path": "npx",
+        "args": ["-y", "@abhishekkumar00019/swagger-mcp"]
       },
       "env": {
         "SWAGGER_MCP_SPEC_URL": "https://petstore.swagger.io/v2/swagger.json"
