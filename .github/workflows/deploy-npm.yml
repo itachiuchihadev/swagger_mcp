@@ -1,0 +1,72 @@
+name: Deploy to NPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 1.0.1, patch, minor, major)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Publish Package to NPM
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Set and check version
+        id: version_check
+        run: |
+          # Apply requested version or semver bump
+          TARGET_VERSION=$(npm version ${{ inputs.version }} --no-git-tag-version)
+          # Strip leading 'v' if present
+          TARGET_VERSION=${TARGET_VERSION#v}
+          echo "Target version: $TARGET_VERSION"
+          
+          # Check if package version already exists on NPM
+          PKG_NAME=$(node -p "require('./package.json').name")
+          EXISTS=$(npm view "${PKG_NAME}@${TARGET_VERSION}" version 2>/dev/null || echo "")
+          
+          if [ -n "$EXISTS" ]; then
+            echo "::error::Version ${TARGET_VERSION} of ${PKG_NAME} already exists on NPM registry!"
+            exit 1
+          fi
+          
+          echo "Version ${TARGET_VERSION} is available for publishing."
+          echo "version=${TARGET_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish to NPM
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit and push version update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${{ steps.version_check.outputs.version }}"
+          git tag "v${{ steps.version_check.outputs.version }}"
+          git push origin master --tags
