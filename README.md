@@ -118,7 +118,7 @@ Add to `.vscode/mcp.json` in your workspace or global VS Code settings:
 
 ```json
 {
-  "mcpServers": {
+  "server": {
     "swagger-mcp": {
       "command": "npx",
       "args": ["-y", "@abhishekkumar00019/swagger-mcp"],

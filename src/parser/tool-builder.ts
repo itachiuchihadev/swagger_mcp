@@ -42,8 +42,7 @@ export interface McpToolDefinition {
  *
  * Priority:
  * 1. operationId (if present in the spec) — preserves casing
- * 2. tag + method + path (if tag exists) — lowercased
- * 3. method + path (last resort) — lowercased
+ * 2. Smart compressed tag + method + path — lowercased, max 64 chars
  *
  * Sanitization: replace special chars with _, collapse multiples,
  * strip leading/trailing _, max 64 chars.
@@ -57,15 +56,9 @@ export function generateToolName(
   if (operation.operationId) {
     // Priority 1: use operationId directly — preserve its casing
     name = sanitizeName(operation.operationId, false);
-  } else if (operation.tag) {
-    // Priority 2: tag + method + path — lowercase
-    name = sanitizeName(
-      `${operation.tag}_${operation.method}_${operation.path}`,
-      true
-    );
   } else {
-    // Priority 3: method + path — lowercase
-    name = sanitizeName(`${operation.method}_${operation.path}`, true);
+    // Priority 2: smart compressed path & tag name generation
+    name = compressPathAndName(operation.method, operation.path, operation.tag);
   }
 
   // Guard against empty name after sanitization
@@ -83,6 +76,75 @@ export function generateToolName(
   }
 
   return uniqueName;
+}
+
+/**
+ * Smartly compresses long HTTP paths and tags into clean, human-readable tool names (<= 64 chars).
+ * - Strips redundant API prefixes (/api/v1, /v2, /rest, etc.)
+ * - Cleans path parameter placeholders ({id} -> by_id)
+ * - Summarizes long paths using key trailing resource segments to prevent arbitrary truncation
+ */
+export function compressPathAndName(
+  method: string,
+  rawPath: string,
+  tag?: string
+): string {
+  // 1. Strip common API boilerplate prefixes
+  const pathWithoutPrefix = rawPath.replace(
+    /^\/(?:api\/v\d+|rest\/v\d+|api|rest|v\d+)\//i,
+    "/"
+  );
+
+  // 2. Tokenize path segments
+  const segments = pathWithoutPrefix.split("/").filter(Boolean);
+
+  const cleanedSegments: string[] = [];
+  for (const seg of segments) {
+    if (seg.startsWith("{") && seg.endsWith("}")) {
+      const paramInner = seg.slice(1, -1);
+      const cleanedParam = paramInner.replace(/(?:Id|_id)$/i, "").toLowerCase();
+      if (cleanedParam === "" || cleanedParam === "id") {
+        cleanedSegments.push("id");
+      } else {
+        cleanedSegments.push(`by_${cleanedParam}`);
+      }
+    } else {
+      cleanedSegments.push(seg);
+    }
+  }
+
+  const methodLower = method.toLowerCase();
+  const tagPrefix = tag ? `${sanitizeName(tag, true)}_` : "";
+
+  // Strategy A: Full compressed path
+  const fullPathStr = cleanedSegments.join("_");
+  let candidate = tagPrefix ? `${tagPrefix}${methodLower}_${fullPathStr}` : `${methodLower}_${fullPathStr}`;
+  candidate = sanitizeName(candidate, true);
+
+  if (candidate.length <= 60 && candidate.length > 0) {
+    return candidate;
+  }
+
+  // Strategy B: Over 60 chars — use the last 3 most specific segments (actions & resources live at the end of REST URLs)
+  const last3 = cleanedSegments.slice(-3).join("_");
+  let shortCandidate = tagPrefix ? `${tagPrefix}${methodLower}_${last3}` : `${methodLower}_${last3}`;
+  shortCandidate = sanitizeName(shortCandidate, true);
+
+  if (shortCandidate.length <= 60 && shortCandidate.length > 0) {
+    return shortCandidate;
+  }
+
+  // Strategy C: Last 2 segments
+  const last2 = cleanedSegments.slice(-2).join("_");
+  let ultraShortCandidate = tagPrefix ? `${tagPrefix}${methodLower}_${last2}` : `${methodLower}_${last2}`;
+  ultraShortCandidate = sanitizeName(ultraShortCandidate, true);
+
+  if (ultraShortCandidate.length <= 60 && ultraShortCandidate.length > 0) {
+    return ultraShortCandidate;
+  }
+
+  // Fallback: hard truncate cleanly to 64
+  return candidate.substring(0, 64).replace(/^_|_$/g, "");
 }
 
 /**

@@ -1,8 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { generateToolName, buildTools } from '../../src/parser/tool-builder.js';
+import { generateToolName, buildTools, compressPathAndName } from '../../src/parser/tool-builder.js';
 import { ParsedOperation } from '../../src/core/types.js';
 
 describe('tool-builder', () => {
+  describe('compressPathAndName', () => {
+    it('strips /api/v1 prefixes and formats path parameters', () => {
+      const result = compressPathAndName('get', '/api/v1/users/{userId}');
+      expect(result).toBe('get_users_by_user');
+    });
+
+    it('compresses very long paths to keep under 64 chars without awkward truncation', () => {
+      const longPath = '/api/v1/user-management/organizations/{organizationUnitId}/billing/subscriptions/{subscriptionId}/invoices';
+      const result = compressPathAndName('get', longPath, 'Billing');
+      expect(result.length).toBeLessThanOrEqual(64);
+      expect(result).toContain('invoices');
+      expect(result.endsWith('_m')).toBe(false);
+    });
+  });
+
   describe('generateToolName', () => {
     it('uses operationId when present (preserves casing)', () => {
       const op: ParsedOperation = {
