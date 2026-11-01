@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { generateToolName, buildTools, compressPathAndName } from '../../src/parser/tool-builder.js';
+import {
+  generateToolName,
+  buildTools,
+  compressPathAndName,
+  compressOversizedName,
+  getDeterministicHash,
+} from '../../src/parser/tool-builder.js';
 import { ParsedOperation } from '../../src/core/types.js';
 
 describe('tool-builder', () => {
@@ -212,6 +218,113 @@ describe('tool-builder', () => {
       };
       const { tools } = buildTools([op]);
       expect(tools[0].inputSchema.required).toEqual(['id']);
+    });
+  });
+
+  describe('compressOversizedName and collision prevention', () => {
+    it('compresses oversized compound operationIds with head, tail, and deterministic hash', () => {
+      const opA: ParsedOperation = {
+        method: 'get',
+        path: '/warehouse/containers',
+        operationId: 'GlobalSupplyChainLogisticsWarehouseInventoryService_GetShippingManifestByContainerId',
+        parameters: [],
+      };
+      const opB: ParsedOperation = {
+        method: 'get',
+        path: '/warehouse/consignments',
+        operationId: 'GlobalSupplyChainLogisticsWarehouseInventoryService_GetShippingManifestByConsignmentId',
+        parameters: [],
+      };
+
+      const usedNames = new Set<string>();
+      const nameA = generateToolName(opA, usedNames);
+      usedNames.add(nameA);
+      const nameB = generateToolName(opB, usedNames);
+
+      expect(nameA.length).toBeLessThanOrEqual(64);
+      expect(nameB.length).toBeLessThanOrEqual(64);
+      expect(nameA).not.toBe(nameB);
+      expect(nameA).toContain('container_id');
+      expect(nameB).toContain('consignment_id');
+    });
+
+    it('preserves root domain and leaf when paths are deep, preventing sibling collisions', () => {
+      const userSettings: ParsedOperation = {
+        method: 'get',
+        path: '/api/v1/users/{userId}/settings',
+        parameters: [],
+      };
+      const orgSettings: ParsedOperation = {
+        method: 'get',
+        path: '/api/v1/organizations/{orgId}/settings',
+        parameters: [],
+      };
+      const projSettings: ParsedOperation = {
+        method: 'get',
+        path: '/api/v1/organizations/{orgId}/workspaces/{wsId}/projects/{pId}/settings',
+        parameters: [],
+      };
+
+      const { tools, mappings } = buildTools([userSettings, orgSettings, projSettings]);
+
+      expect(tools).toHaveLength(3);
+      expect(mappings.size).toBe(3);
+
+      const names = tools.map((t) => t.name);
+      // All must be distinct and <= 64 chars
+      expect(new Set(names).size).toBe(3);
+      names.forEach((name) => expect(name.length).toBeLessThanOrEqual(64));
+
+      // Each retains its root context
+      expect(names.some((n) => n.includes('users') && n.includes('settings'))).toBe(true);
+      expect(names.some((n) => n.includes('organizations') && n.includes('settings'))).toBe(true);
+    });
+
+    it('correctly maps all 17 sample API endpoints to 17 unique tools without drops', () => {
+      const operations: ParsedOperation[] = [
+        // Auth
+        { method: 'post', path: '/api/v1/auth/login', parameters: [] },
+        { method: 'post', path: '/api/v1/auth/logout', parameters: [] },
+        { method: 'post', path: '/api/v1/auth/refresh', parameters: [] },
+        // Users
+        { method: 'get', path: '/api/v1/users', parameters: [] },
+        { method: 'post', path: '/api/v1/users', parameters: [] },
+        { method: 'get', path: '/api/v1/users/{user_id}', parameters: [] },
+        { method: 'put', path: '/api/v1/users/{user_id}', parameters: [] },
+        { method: 'delete', path: '/api/v1/users/{user_id}', parameters: [] },
+        { method: 'get', path: '/api/v1/users/{user_id}/settings', parameters: [] },
+        // Organizations
+        { method: 'get', path: '/api/v1/organizations', parameters: [] },
+        { method: 'post', path: '/api/v1/organizations', parameters: [] },
+        { method: 'get', path: '/api/v1/organizations/{org_id}/settings', parameters: [] },
+        { method: 'get', path: '/api/v1/organizations/{org_id}/members', parameters: [] },
+        { method: 'post', path: '/api/v1/organizations/{org_id}/members', parameters: [] },
+        // Deeply Nested Projects
+        { method: 'get', path: '/api/v1/organizations/{org_id}/workspaces/{ws_id}/projects', parameters: [] },
+        { method: 'post', path: '/api/v1/organizations/{org_id}/workspaces/{ws_id}/projects', parameters: [] },
+        { method: 'get', path: '/api/v1/organizations/{org_id}/workspaces/{ws_id}/projects/{p_id}/settings', parameters: [] },
+      ];
+
+      const { tools, mappings } = buildTools(operations);
+
+      // Crucial test: all 17 must be preserved, no dropping down to 7
+      expect(tools).toHaveLength(17);
+      expect(mappings.size).toBe(17);
+
+      for (const tool of tools) {
+        expect(tool.name.length).toBeLessThanOrEqual(64);
+        expect(tool.name).toMatch(/^[a-zA-Z0-9_]+$/);
+      }
+    });
+
+    it('generates consistent deterministic hash for the same input', () => {
+      const hash1 = getDeterministicHash('get:/api/v1/users/test', 6);
+      const hash2 = getDeterministicHash('get:/api/v1/users/test', 6);
+      const hash3 = getDeterministicHash('post:/api/v1/users/test', 6);
+
+      expect(hash1).toBe(hash2);
+      expect(hash1).toHaveLength(6);
+      expect(hash1).not.toBe(hash3);
     });
   });
 });
