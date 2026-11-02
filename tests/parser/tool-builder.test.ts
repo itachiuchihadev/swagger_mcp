@@ -25,7 +25,7 @@ describe('tool-builder', () => {
   });
 
   describe('generateToolName', () => {
-    it('uses operationId when present (preserves casing)', () => {
+    it('uses operationId when present (preserves casing) with deterministic hash', () => {
       const op: ParsedOperation = {
         method: 'get',
         path: '/users',
@@ -33,10 +33,11 @@ describe('tool-builder', () => {
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames)).toBe('GetUserById');
+      const hash = getDeterministicHash('get:/users', 6);
+      expect(generateToolName(op, usedNames)).toBe(`GetUserById_${hash}`);
     });
 
-    it('uses tag + method + path when no operationId (lowercased)', () => {
+    it('uses tag + method + path with deterministic hash when no operationId', () => {
       const op: ParsedOperation = {
         method: 'get',
         path: '/users',
@@ -44,27 +45,30 @@ describe('tool-builder', () => {
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames)).toBe('users_get_users');
+      const hash = getDeterministicHash('get:/users', 6);
+      expect(generateToolName(op, usedNames)).toBe(`users_get_users_${hash}`);
     });
 
-    it('uses method + path as fallback (lowercased)', () => {
+    it('uses method + path with deterministic hash as fallback', () => {
       const op: ParsedOperation = {
         method: 'get',
         path: '/users',
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames)).toBe('get_users');
+      const hash = getDeterministicHash('get:/users', 6);
+      expect(generateToolName(op, usedNames)).toBe(`get_users_${hash}`);
     });
 
-    it('sanitizes special characters (/, {, }, -, .)', () => {
+    it('sanitizes special characters and appends deterministic hash', () => {
       const op: ParsedOperation = {
         method: 'post',
         path: '/users/{id}/update-status.json',
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames)).toBe('post_users_id_update_status_json');
+      const hash = getDeterministicHash('post:/users/{id}/update-status.json', 6);
+      expect(generateToolName(op, usedNames)).toBe(`post_users_id_update_status_json_${hash}`);
     });
 
     it('handles uniqueness collision (appends _2, _3 etc)', () => {
@@ -74,11 +78,36 @@ describe('tool-builder', () => {
         operationId: 'getUsers',
         parameters: []
       };
-      const usedNames = new Set<string>(['getUsers', 'getUsers_2']);
-      expect(generateToolName(op, usedNames)).toBe('getUsers_3');
+      const hash = getDeterministicHash('get:/users', 6);
+      const baseWithHash = `getUsers_${hash}`;
+      const usedNames = new Set<string>([baseWithHash, `${baseWithHash}_2`]);
+      expect(generateToolName(op, usedNames)).toBe(`${baseWithHash}_3`);
     });
 
-    it('handles empty/invalid operationIds', () => {
+    it('handles duplicate operationIds on different endpoints without collision', () => {
+      const opGet: ParsedOperation = {
+        method: 'get',
+        path: '/users',
+        operationId: 'handleUsers',
+        parameters: []
+      };
+      const opPost: ParsedOperation = {
+        method: 'post',
+        path: '/users',
+        operationId: 'handleUsers',
+        parameters: []
+      };
+      const usedNames = new Set<string>();
+      const nameGet = generateToolName(opGet, usedNames);
+      usedNames.add(nameGet);
+      const namePost = generateToolName(opPost, usedNames);
+
+      expect(nameGet).not.toBe(namePost);
+      expect(nameGet).toBe(`handleUsers_${getDeterministicHash('get:/users', 6)}`);
+      expect(namePost).toBe(`handleUsers_${getDeterministicHash('post:/users', 6)}`);
+    });
+
+    it('handles empty/invalid operationIds with deterministic hash', () => {
       const op: ParsedOperation = {
         method: 'get',
         path: '/users',
@@ -86,10 +115,11 @@ describe('tool-builder', () => {
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames)).toBe('unnamed_tool');
+      const hash = getDeterministicHash('get:/users', 6);
+      expect(generateToolName(op, usedNames)).toBe(`unnamed_tool_${hash}`);
     });
 
-    it('respects max 64 char limit', () => {
+    it('respects max 64 char limit and appends hash', () => {
       const op: ParsedOperation = {
         method: 'get',
         path: '/users',
@@ -97,8 +127,10 @@ describe('tool-builder', () => {
         parameters: []
       };
       const usedNames = new Set<string>();
-      expect(generateToolName(op, usedNames).length).toBe(64);
-      expect(generateToolName(op, usedNames)).toBe('a'.repeat(64));
+      const result = generateToolName(op, usedNames);
+      const hash = getDeterministicHash('get:/users', 6);
+      expect(result.length).toBe(64);
+      expect(result).toBe(`${'a'.repeat(57)}_${hash}`);
     });
 
     it('handles uniqueness collision near the length limit', () => {
@@ -108,8 +140,9 @@ describe('tool-builder', () => {
         operationId: 'a'.repeat(100),
         parameters: []
       };
-      const longName = 'a'.repeat(64);
-      const usedNames = new Set<string>([longName]);
+      const hash = getDeterministicHash('get:/users', 6);
+      const existingName = `${'a'.repeat(57)}_${hash}`;
+      const usedNames = new Set<string>([existingName]);
       const res = generateToolName(op, usedNames);
       expect(res.length).toBe(64);
       expect(res.endsWith('_2')).toBe(true);
@@ -133,12 +166,14 @@ describe('tool-builder', () => {
         ]
       };
       const { tools, mappings } = buildTools([op]);
+      const hash = getDeterministicHash('get:/users/{id}', 6);
+      const expectedName = `getUser_${hash}`;
       expect(tools).toHaveLength(1);
-      expect(tools[0].name).toBe('getUser');
+      expect(tools[0].name).toBe(expectedName);
       expect(tools[0].inputSchema.properties).toHaveProperty('id');
       expect((tools[0].inputSchema.properties as any).id.description).toContain('(path parameter)');
       expect(tools[0].inputSchema.required).toEqual(['id']);
-      expect(mappings.get('getUser')?.operation).toEqual(op);
+      expect(mappings.get(expectedName)?.operation).toEqual(op);
     });
 
     it('handles operation with query params, required and optional', () => {

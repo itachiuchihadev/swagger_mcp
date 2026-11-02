@@ -52,6 +52,10 @@ export function generateToolName(
   operation: ParsedOperation,
   usedNames: Set<string>
 ): string {
+  // Compute deterministic hash from method + path
+  const signature = `${operation.method.toLowerCase()}:${operation.path}`;
+  const hash = getDeterministicHash(signature, 6);
+
   let name: string;
 
   if (operation.operationId) {
@@ -72,7 +76,7 @@ export function generateToolName(
       name = sanitizeName(operation.operationId, false);
     }
   } else {
-    // Priority 3: method + path — lowercase
+    // Priority 2: method + path — lowercase
     name = compressPathAndName(operation.method, operation.path, operation.tag);
   }
 
@@ -81,7 +85,14 @@ export function generateToolName(
     name = "unnamed_tool";
   }
 
-  // Ensure uniqueness by appending a counter if needed
+  // Append the deterministic hash to every tool name (guarantees uniqueness across endpoints)
+  if (!name.endsWith(`_${hash}`)) {
+    const maxBaseLen = 64 - (hash.length + 1); // 57 characters
+    const trimmedBase = name.substring(0, maxBaseLen).replace(/_+$/, "");
+    name = `${trimmedBase}_${hash}`;
+  }
+
+  // Ensure uniqueness by appending a counter if needed (edge-case collision fallback)
   let uniqueName = name;
   let counter = 2;
   while (usedNames.has(uniqueName)) {
