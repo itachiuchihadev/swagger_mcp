@@ -1,52 +1,41 @@
-name: Deploy to NPM
+name: Publish npm Package
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g. 1.0.1, patch, minor, major)'
+        description: 'Version to publish (e.g. 1.0.3, 1.1.0-beta.0, or semver bump: patch, minor, prerelease)'
         required: true
+        default: 'patch'
         type: string
+      tag:
+        description: 'npm dist-tag (e.g. latest, beta, next, rc)'
+        required: true
+        default: 'latest'
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   publish:
-    name: Publish Package to NPM
-    if: github.ref == 'refs/heads/master'
+    name: Publish to npm (Trusted Publishing)
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
+    # Restrict releases to the default branch
+    if: github.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@v6
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          fetch-depth: 0
 
-      - name: Set and check version
-        id: version_check
-        run: |
-          # Apply requested version or semver bump
-          TARGET_VERSION=$(npm version ${{ inputs.version }} --no-git-tag-version)
-          # Strip leading 'v' if present
-          TARGET_VERSION=${TARGET_VERSION#v}
-          echo "Target version: $TARGET_VERSION"
-          
-          # Check if package version already exists on NPM
-          PKG_NAME=$(node -p "require('./package.json').name")
-          EXISTS=$(npm view "${PKG_NAME}@${TARGET_VERSION}" version 2>/dev/null || echo "")
-          
-          if [ -n "$EXISTS" ]; then
-            echo "::error::Version ${TARGET_VERSION} of ${PKG_NAME} already exists on NPM registry!"
-            exit 1
-          fi
-          
-          echo "Version ${TARGET_VERSION} is available for publishing."
-          echo "version=${TARGET_VERSION}" >> $GITHUB_OUTPUT
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: npm ci
@@ -57,16 +46,68 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Publish to NPM
-        run: npm publish
+      - name: Validate and bump version
+        id: version_bump
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          NPM_TAG: ${{ inputs.tag }}
+        run: |
+          # 1. Sanitize and validate semver input (prevents shell injection)
+          if [[ ! "$INPUT_VERSION" =~ ^(patch|minor|major|prepatch|preminor|premajor|prerelease|[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?)$ ]]; then
+            echo "::error::Invalid version or semver bump: '$INPUT_VERSION'"
+            exit 1
+          fi
 
-      - name: Commit and push version update
+          # 2. Sanitize and validate dist-tag
+          if [[ ! "$NPM_TAG" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+            echo "::error::Invalid npm dist-tag: '$NPM_TAG'"
+            exit 1
+          fi
+
+          # 3. Apply requested version bump without creating a git commit/tag yet
+          npm version "$INPUT_VERSION" --no-git-tag-version --allow-same-version
+          TARGET_VERSION=$(node -p "require('./package.json').version")
+          PKG_NAME=$(node -p "require('./package.json').name")
+          echo "Target version: $TARGET_VERSION"
+          echo "Target dist-tag: $NPM_TAG"
+
+          # 4. Check if version already exists on npm registry
+          if npm view "${PKG_NAME}@${TARGET_VERSION}" version 2>/dev/null | grep -q "^${TARGET_VERSION}$"; then
+            echo "::error::Version ${TARGET_VERSION} of ${PKG_NAME} already exists on npm registry!"
+            exit 1
+          fi
+
+          # 5. Check if Git tag already exists remotely
+          if git ls-remote --tags origin "refs/tags/v${TARGET_VERSION}" | grep -q "v${TARGET_VERSION}"; then
+            echo "::error::Git tag v${TARGET_VERSION} already exists on remote!"
+            exit 1
+          fi
+
+          echo "version=${TARGET_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Publish to npm with provenance
+        env:
+          NPM_TAG: ${{ inputs.tag }}
+        run: npm publish --provenance --access public --tag "$NPM_TAG"
+
+      - name: Commit, tag, and push release
+        env:
+          VERSION: ${{ steps.version_bump.outputs.version }}
+          NPM_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
-          git commit -m "chore(release): v${{ steps.version_check.outputs.version }}"
-          git tag "v${{ steps.version_check.outputs.version }}"
-          git push origin master --tags
+          git diff --staged --quiet || git commit -m "chore(release): v${VERSION}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin HEAD:master "v${VERSION}"
+
+          # Mark as prerelease on GitHub if not tagged as 'latest'
+          PRERELEASE_FLAG=""
+          if [ "$NPM_TAG" != "latest" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # Create GitHub Release with auto-generated release notes
+          gh release create "v${VERSION}" --title "v${VERSION}" --generate-notes $PRERELEASE_FLAG
